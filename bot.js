@@ -173,7 +173,7 @@ function status() {
   }
   return {
     state: task || p.state, message, connected: !!(bot && bot.entity), username: currentUsername, op: opOk,
-    file: p.file, files: listSchematics(), origin: p.origin,
+    file: p.file, files: listSchematics(), dir: SCHEM_DIR, volume: !!process.env.RAILWAY_VOLUME_MOUNT_PATH, origin: p.origin,
     schematic: schem ? { w: schem.width, h: schem.height, l: schem.length, format: schem.format, types: schem.palette.length - 2 } : null,
     analyzed: p.analyzed, skipped, top, failures: p.failures || 0,
     percent: percent(), doneCmds: p.doneCmds, totalCmds: plan ? plan.totalCmds : 0,
@@ -192,7 +192,7 @@ app.use((req, res, next) => {
 
 const act = (fn) => async (req, res) => {
   try { const r = await fn(req); res.json({ ok: true, message: (typeof r === 'string' ? r : message) }); }
-  catch (e) { res.json({ ok: false, message: e.message }); }
+  catch (e) { message = 'Error: ' + e.message; console.log('[Web] ' + message); res.json({ ok: false, message }); }
 };
 
 app.get('/api/status',  (req, res) => res.json(status()));
@@ -203,12 +203,14 @@ app.get('/api/analyze', act(async () => { analyze().catch(e => setMsg('Analyze e
 app.get('/api/start',   act(async () => { await start(); }));
 app.get('/api/pause',   act(async () => pause()));
 app.get('/api/reset',   act(async () => reset()));
-app.post('/api/upload', express.raw({ type: '*/*', limit: '200mb' }), act(async (q) => {
+app.post('/api/upload', express.raw({ type: () => true, limit: '200mb' }), act(async (q) => {
   const name = path.basename(String(q.query.name || ''));
   if (!/\.(schem|litematic|nbt)$/i.test(name)) throw new Error('File must end in .schem, .litematic or .nbt');
   if (!q.body || !q.body.length) throw new Error('Empty upload');
   fs.writeFileSync(path.join(SCHEM_DIR, name), q.body);
-  await loadSchematic(name);
+  console.log(`[Upload] Saved ${name} (${q.body.length} bytes) to ${SCHEM_DIR}`);
+  try { await loadSchematic(name); }
+  catch (e) { try { fs.unlinkSync(path.join(SCHEM_DIR, name)); } catch (x) {} throw e; }   // don't keep broken files
 }));
 
 app.get('/preview.png', async (req, res) => {
@@ -235,7 +237,7 @@ table{width:100%;border-collapse:collapse}td{padding:3px 6px;border-bottom:1px s
 <div id="stats" class="dim" style="margin-top:6px"></div></div>
 <div class="card"><h3>1. Schematic</h3><div class="row"><select id="files" style="padding:8px;background:#262a33;color:#eee;border-radius:6px"></select>
 <button onclick="call('load',{name:files.value})">Load</button><input type="file" id="up" style="width:auto" accept=".schem,.litematic,.nbt"><button onclick="upload()">Upload</button></div>
-<div id="info" class="dim"></div></div>
+<div id="info" class="dim"></div><div id="store" class="dim" style="margin-top:4px"></div></div>
 <div class="card"><h3>2. Where to build (lowest corner of the build)</h3><div class="row">
 X <input id="x" type="number"> Y <input id="y" type="number"> Z <input id="z" type="number">
 <button onclick="call('origin',{x:x.value,y:y.value,z:z.value})">Set</button><button onclick="call('here')">Use bot position</button></div></div>
@@ -248,17 +250,19 @@ X <input id="x" type="number"> Y <input id="y" type="number"> Z <input id="z" ty
 Layer <input id="layer" type="number" value="0"><button onclick="prev(layer.value)">Show</button></div><img id="pv" alt=""></div>
 <script>
 const T=new URLSearchParams(location.search).get('token'),q=o=>new URLSearchParams({...o,...(T?{token:T}:{})}).toString();
-const $=id=>document.getElementById(id);let last='';
-async function call(a,o={}){const r=await(await fetch('/api/'+a+'?'+q(o))).json();$('msg').textContent=r.message;refresh();if(a==='load')prev(null)}
-async function upload(){const f=$('up').files[0];if(!f)return;$('msg').textContent='Uploading...';
- const r=await(await fetch('/api/upload?'+q({name:f.name}),{method:'POST',body:f})).json();$('msg').textContent=r.message;refresh();prev(null)}
+const $=id=>document.getElementById(id);let last='',flash=0;
+async function call(a,o={}){const r=await(await fetch('/api/'+a+'?'+q(o))).json();$('msg').textContent=r.message;flash=Date.now();refresh();if(a==='load'&&r.ok)prev(null)}
+async function upload(){const f=$('up').files[0];if(!f){$('msg').textContent='Choose a file first';return}$('msg').textContent='Uploading '+f.name+' ('+(f.size/1024).toFixed(0)+' KB)...';flash=Date.now();
+ let r;try{r=await(await fetch('/api/upload?'+q({name:f.name}),{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:f})).json()}catch(e){r={ok:false,message:'Upload failed: '+e.message+' (file too big for the proxy, or server restarting)'}}$('msg').textContent=r.message;flash=Date.now();refresh();if(r.ok)prev(null)}
 function prev(l){$('pv').src='/preview.png?'+q(l===null?{t:Date.now()}:{layer:l,t:Date.now()})}
 async function refresh(){const s=await(await fetch('/api/status?'+q({}))).json();
- $('msg').textContent=s.message;$('fill').style.width=s.percent+'%';
+ if(Date.now()-flash>10000)$('msg').textContent=s.message;$('fill').style.width=s.percent+'%';
  $('stats').textContent=[s.state.toUpperCase(),s.connected?'bot online ('+s.username+')':'bot offline',s.op===false?'NOT OP':'',
   s.totalCmds?s.percent.toFixed(1)+'% - area '+s.tile+'/'+s.tiles:'',s.rate?s.rate+' cmd/s':'',s.eta?'ETA '+Math.ceil(s.eta/60)+' min':'',s.failures?s.failures+' server errors':''].filter(Boolean).join('  |  ');
  const f=$('files');if(f.dataset.k!==s.files.join()+s.file){f.innerHTML=s.files.map(n=>'<option'+(n===s.file?' selected':'')+'>'+n+'</option>').join('');f.dataset.k=s.files.join()+s.file}
  $('info').textContent=s.schematic?s.schematic.w+' x '+s.schematic.h+' x '+s.schematic.l+' ('+s.schematic.format+'), '+s.schematic.types+' block types':'No schematic loaded';
+
+ $('store').innerHTML=s.volume?'Saved in '+s.dir+' (volume attached, files survive redeploys)':'<span class=warn>No volume attached: uploads will be DELETED on every redeploy/restart ('+s.dir+')</span>';
  if(s.origin&&document.activeElement.tagName!=='INPUT'){x.value=s.origin.x;y.value=s.origin.y;z.value=s.origin.z}
  $('skipcard').style.display=s.skipped.length?'block':'none';
  $('skip').innerHTML=s.skipped.map(r=>'<tr><td class=bad>'+r.state+'</td><td>'+r.n+'</td></tr>').join('');
@@ -269,6 +273,35 @@ refresh();setInterval(refresh,3000);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('[Web] Status page on port ' + PORT));
+
+// ── Anti-AFK: look around, walk a step and back, jump, swing ──
+let afkTimer = null;
+function stopAntiAfk() { if (afkTimer) clearInterval(afkTimer); afkTimer = null; }
+function startAntiAfk() {
+  stopAntiAfk();
+  const cfg = config.bot.antiAfk;
+  if (!cfg || !cfg.enabled) return;
+  let busy = false;
+  afkTimer = setInterval(async () => {
+    const b = bot;
+    if (busy || !b || !b.entity) return;
+    busy = true;
+    try {
+      await b.look(b.entity.yaw + (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 0.6, true);
+      const r = Math.random();
+      if (r < 0.45) {                       // one step forward, then the same step back
+        const d = 300 + Math.random() * 400;
+        b.setControlState('forward', true); await sleep(d); b.setControlState('forward', false);
+        await sleep(150);
+        b.setControlState('back', true);    await sleep(d); b.setControlState('back', false);
+      } else if (r < 0.75) {                // jump
+        b.setControlState('jump', true); await sleep(250); b.setControlState('jump', false);
+      } else b.swingArm();                  // wave
+    } catch (e) { /* bot may have disconnected mid-move */ }
+    try { b.clearControlStates(); } catch (e) {}
+    busy = false;
+  }, cfg.intervalMs || 20000);
+}
 
 // ── Minecraft connection ──────────────────────────────────────
 function nextUsername() {
@@ -298,6 +331,7 @@ function createBot() {
 function scheduleReconnect() {
   if (reconnecting) return;
   reconnecting = true; running = false; opOk = null;
+  stopAntiAfk();
   const wasBuilding = progress.state === 'building';
   if (wasBuilding) { progress.state = 'paused'; progress.resumeOnSpawn = true; save(); }
   bot = null;
@@ -307,6 +341,7 @@ function scheduleReconnect() {
 async function onSpawn() {
   console.log(`[Bot] ✅ Spawned as "${currentUsername}"`);
   await sleep(3000);
+  startAntiAfk();
   if (progress.resumeOnSpawn && schem && !task) {
     progress.resumeOnSpawn = false; save();
     console.log('[Bot] Auto-resuming the build');
