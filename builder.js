@@ -11,16 +11,21 @@ const { AIR, KEEP } = require('./schematic');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Is the bot an operator? Uses /execute (needs OP on every version) instead of /gamerule,
+// because gamerule names changed in newer versions and made this check fail for real OPs.
 function checkOp(bot) {
   return new Promise((resolve) => {
     const onMsg = (msg) => {
-      if (/currently set to/i.test(msg)) done(true);
-      else if (/unknown or incomplete|permission|not allowed/i.test(msg)) done(false);
+      if (/^test (passed|failed)/i.test(msg) || /^successfully/i.test(msg)) done(true);
+      else if (/unknown (or incomplete )?command|do not have permission|don't have permission|not allowed|sorry|incorrect argument/i.test(msg)) done(false);
     };
-    const timer = setTimeout(() => done(false), 4000);
+    const timer = setTimeout(() => {
+      console.log('[OP] No reply from the server (command feedback may be off). Assuming the bot is OP.');
+      done(true);
+    }, 4000);
     function done(v) { clearTimeout(timer); bot.removeListener('messagestr', onMsg); resolve(v); }
     bot.on('messagestr', onMsg);
-    bot.chat('/gamerule doDaylightCycle');
+    bot.chat('/execute if entity @s');
   });
 }
 
