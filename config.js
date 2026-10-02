@@ -12,11 +12,12 @@ module.exports = {
   },
 
   bot: {
-    usernames: ['SchemBot_Atlas', 'SchemBot_Forge', 'SchemBot_Quarry', 'SchemBot_Mason', 'SchemBot_Archer'],
+    usernames: ['SchemBot_Atlas', 'SchemBot_Forge', 'SchemBot_Quarry', 'SchemBot_Mason', 'SchemBot_Archer', 'SchemBot_Anish'],
     reconnectDelay: 5000,
     // null = anyone who types "schem ..." in chat / console can control the bot.
     // Or restrict, e.g. ['Server', 'YourName']
     allowedUsers: null,
+    antiAfk: { enabled: true, intervalMs: 20000 },
   },
 
   schematic: {
