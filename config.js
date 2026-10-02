@@ -5,8 +5,8 @@
 module.exports = {
 
   server: {
-    host:    process.env.MC_HOST    || 'YOUR_SERVER.aternos.me',
-    port:    parseInt(process.env.MC_PORT || '25565', 10),
+    host:    process.env.MC_HOST    || 'aeadasde.aternos.me',
+    port:    parseInt(process.env.MC_PORT || '57199', 10),
     // Version the BOT speaks. Your server can be newer (26.2) if ViaVersion is installed on it.
     version: process.env.MC_VERSION || '26.1',
   },
