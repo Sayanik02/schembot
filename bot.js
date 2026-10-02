@@ -175,6 +175,7 @@ function status() {
     state: task || p.state, message, connected: !!(bot && bot.entity), username: currentUsername, op: opOk,
     file: p.file, files: listSchematics(), dir: SCHEM_DIR, volume: !!process.env.RAILWAY_VOLUME_MOUNT_PATH, origin: p.origin,
     schematic: schem ? { w: schem.width, h: schem.height, l: schem.length, format: schem.format, types: schem.palette.length - 2 } : null,
+    missing: !!(p.file && !listSchematics().includes(p.file)),
     analyzed: p.analyzed, skipped, top, failures: p.failures || 0,
     percent: percent(), doneCmds: p.doneCmds, totalCmds: plan ? plan.totalCmds : 0,
     tile: plan ? Math.min(p.tileIndex + 1, plan.tiles.length) : 0, tiles: plan ? plan.tiles.length : 0,
@@ -235,7 +236,7 @@ table{width:100%;border-collapse:collapse}td{padding:3px 6px;border-bottom:1px s
 <h1>🧱 Schematic Builder Bot</h1>
 <div class="card"><div id="msg">...</div><div class="bar" style="margin-top:10px"><div id="fill"></div></div>
 <div id="stats" class="dim" style="margin-top:6px"></div></div>
-<div class="card"><h3>1. Schematic</h3><div class="row"><select id="files" style="padding:8px;background:#262a33;color:#eee;border-radius:6px"></select>
+<div class="card"><h3>1. Schematic</h3><div class="row"><select id="files" onchange="if(this.value)call('load',{name:this.value})" style="padding:8px;background:#262a33;color:#eee;border-radius:6px;min-width:180px"></select>
 <button onclick="call('load',{name:files.value})">Load</button><input type="file" id="up" style="width:auto" accept=".schem,.litematic,.nbt"><button onclick="upload()">Upload</button></div>
 <div id="info" class="dim"></div><div id="store" class="dim" style="margin-top:4px"></div></div>
 <div class="card"><h3>2. Where to build (lowest corner of the build)</h3><div class="row">
@@ -259,8 +260,8 @@ async function refresh(){const s=await(await fetch('/api/status?'+q({}))).json()
  if(Date.now()-flash>10000)$('msg').textContent=s.message;$('fill').style.width=s.percent+'%';
  $('stats').textContent=[s.state.toUpperCase(),s.connected?'bot online ('+s.username+')':'bot offline',s.op===false?'NOT OP':'',
   s.totalCmds?s.percent.toFixed(1)+'% - area '+s.tile+'/'+s.tiles:'',s.rate?s.rate+' cmd/s':'',s.eta?'ETA '+Math.ceil(s.eta/60)+' min':'',s.failures?s.failures+' server errors':''].filter(Boolean).join('  |  ');
- const f=$('files');if(f.dataset.k!==s.files.join()+s.file){f.innerHTML=s.files.map(n=>'<option'+(n===s.file?' selected':'')+'>'+n+'</option>').join('');f.dataset.k=s.files.join()+s.file}
- $('info').textContent=s.schematic?s.schematic.w+' x '+s.schematic.h+' x '+s.schematic.l+' ('+s.schematic.format+'), '+s.schematic.types+' block types':'No schematic loaded';
+ const f=$('files');if(f.dataset.k!==s.files.join()+s.file){f.innerHTML=s.files.length?s.files.map(n=>'<option'+(n===s.file?' selected':'')+'>'+n+'</option>').join(''):'<option value="">(no files uploaded yet)</option>';f.dataset.k=s.files.join()+s.file}
+ $('info').innerHTML=s.schematic?s.schematic.w+' x '+s.schematic.h+' x '+s.schematic.l+' ('+s.schematic.format+'), '+s.schematic.types+' block types':'No schematic loaded';
 
  $('store').innerHTML=s.volume?'Saved in '+s.dir+' (volume attached, files survive redeploys)':'<span class=warn>No volume attached: uploads will be DELETED on every redeploy/restart ('+s.dir+')</span>';
  if(s.origin&&document.activeElement.tagName!=='INPUT'){x.value=s.origin.x;y.value=s.origin.y;z.value=s.origin.z}
@@ -374,7 +375,7 @@ async function onChat(username, text) {
 (async () => {
   if (progress.file) {
     try { await loadSchematic(progress.file); }
-    catch (e) { console.log('[Boot] Could not reload ' + progress.file + ': ' + e.message); }
+    catch (e) { setMsg(`Saved schematic "${progress.file}" could not be reloaded: ${e.message}. (Without a volume, files are deleted on every redeploy - upload it again.)`); }
   }
   if (progress.state === 'building') { progress.resumeOnSpawn = true; progress.state = 'paused'; save(); }
   createBot();
