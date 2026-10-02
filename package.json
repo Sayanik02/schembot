@@ -1,0 +1,19 @@
+{
+  "name": "minecraft-schematic-builder-bot",
+  "version": "1.0.0",
+  "description": "Minecraft bot that builds .schem / .litematic / .nbt structures using fast /fill commands",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "test": "node test/selftest.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "jimp": "^0.22.12",
+    "mineflayer": "^4.26.0",
+    "prismarine-nbt": "^2.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
