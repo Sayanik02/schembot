@@ -318,7 +318,8 @@ function createBot() {
     host: config.server.host, port: config.server.port, username: currentUsername,
     version: config.server.version, auth: 'offline', checkTimeoutInterval: 60000,
   });
-  bot.once('spawn', onSpawn);
+  let firstSpawn = true;
+  bot.on('spawn', () => { if (firstSpawn) { firstSpawn = false; onSpawn(); } else protectBot(); });
   bot.on('chat', onChat);
   bot.on('kicked', (reason) => {
     const r = typeof reason === 'string' ? reason : JSON.stringify(reason);
@@ -339,10 +340,21 @@ function scheduleReconnect() {
   setTimeout(createBot, config.bot.reconnectDelay);
 }
 
+// Keep the bot safe from mobs (it was getting killed at night): spectator/creative as soon as it is OP.
+async function protectBot() {
+  try {
+    await sleep(1500);
+    if (!bot) return;
+    if (await checkOp(bot)) { opOk = true; bot.chat('/gamemode ' + config.build.gamemode); }
+    else { opOk = false; setMsg(`Bot is not OP. In the server console run: op ${currentUsername}`); }
+  } catch (e) { /* disconnected */ }
+}
+
 async function onSpawn() {
   console.log(`[Bot] ✅ Spawned as "${currentUsername}"`);
   await sleep(3000);
   startAntiAfk();
+  await protectBot();
   if (progress.resumeOnSpawn && schem && !task) {
     progress.resumeOnSpawn = false; save();
     console.log('[Bot] Auto-resuming the build');
